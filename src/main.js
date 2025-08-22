@@ -1,4 +1,4 @@
-// 目标：用 JS 实现一个 JS（mini 版）
+// 目标：用 JS 实现一个 X 语言
 
 // 词法分析
 function tokenize(code) {
@@ -65,7 +65,6 @@ function tokenize(code) {
   // matchAll 匹配所有符合正则的内容，然后用 map 提取出匹配的 token（m[1] 是捕获组）
   let tokens = [...code.matchAll(TOKEN_REGEX)].map((m) => m[1]);
   tokens = tokens.filter((token) => token !== ";"); // js 对分号可有可无
-  console.log(tokens);
   return tokens;
 }
 
@@ -244,23 +243,76 @@ function parse(tokens) {
   // 解析语句（let、function、return、普通表达式等）
   function parseStatement() {
     let t = peek(); // 看当前 token
-
+    // 分号过滤
     if (t === ";") {
       // 空语句
       next(); // 吃掉分号
       return { type: "EmptyStatement" };
     }
-
     // 变量声明
     if (t === "let") {
       next(); // 吃掉 "let"
-      let name = next(); // 变量名
-      next(); // 吃掉 "="
-      let init = parseExpression(); // 解析初始化表达式
-      // 返回变量声明节点
-      return { type: "VariableDeclaration", id: name, init };
-    }
 
+      const declarations = [];
+      const names = [];
+
+      // 先收集所有变量名
+      while (true) {
+        const name = next(); // 这里用 next() 而不是 peek() + next()
+        if (!/^[A-Za-z_]\w*$/.test(name)) {
+          throw new Error(`Invalid variable name: ${name}`);
+        }
+        names.push(name);
+
+        // 如果下一个 token 是逗号，则继续读取变量名
+        if (peek() === ",") {
+          next(); // 吃掉 ","
+        } else {
+          break;
+        }
+      }
+
+      // 检查是否有初始化部分
+      if (peek() === "=") {
+        next(); // 吃掉 "="
+
+        // 收集所有初始化值
+        const inits = [];
+        while (true) {
+          const init = parseExpression();
+          inits.push(init);
+
+          // 如果下一个 token 是逗号，则继续读取初始化值
+          if (peek() === ",") {
+            next(); // 吃掉 ","
+          } else {
+            break;
+          }
+        }
+
+        // 构建声明列表
+        for (let i = 0; i < names.length; i++) {
+          const init =
+            i < inits.length
+              ? inits[i]
+              : { type: "Literal", value: null, raw: "null" };
+          declarations.push({ id: names[i], init });
+        }
+      } else {
+        // 没有初始化部分，全部设为 null
+        for (const name of names) {
+          declarations.push({
+            id: name,
+            init: { type: "Literal", value: null, raw: "null" },
+          });
+        }
+      }
+
+      return {
+        type: "VariableDeclarationList",
+        declarations,
+      };
+    }
     // 函数声明
     if (t === "function") {
       next(); // 吃掉 "function"
@@ -282,12 +334,60 @@ function parse(tokens) {
       next(); // 吃掉 "}"
       return { type: "FunctionDeclaration", id: name, params, body };
     }
-
+    // 返回值
     if (t === "return") {
       // 返回语句
       next(); // 吃掉 "return"
       let arg = parseExpression(); // 解析返回值
       return { type: "ReturnStatement", argument: arg }; // 返回返回语句节点
+    }
+    // 条件
+    if (t === "if") {
+      next(); // 吃掉 "if"
+      next(); // 吃掉 "("
+      const test = parseExpression(); // 解析条件表达式
+      console.log(test);
+      next(); // 吃掉 ")"
+
+      // 解析 consequent（if 后面的语句块）
+      let consequent;
+      if (peek() === "{") {
+        next(); // 吃掉 "{"
+        const body = [];
+        while (peek() !== "}") {
+          body.push(parseStatement());
+        }
+        next(); // 吃掉 "}"
+        consequent = { type: "BlockStatement", body };
+      } else {
+        consequent = parseStatement();
+      }
+
+      // 检查是否有 else
+      let alternate = null;
+      if (peek() === "else") {
+        next(); // 吃掉 "else"
+
+        // 解析 alternate（else 后面的语句块）
+        if (peek() === "{") {
+          next(); // 吃掉 "{"
+          const body = [];
+          while (peek() !== "}") {
+            body.push(parseStatement());
+          }
+          next(); // 吃掉 "}"
+          alternate = { type: "BlockStatement", body };
+        } else {
+          alternate = parseStatement();
+        }
+      }
+
+      return {
+        type: "IfStatement",
+        test,
+        consequent,
+        alternate,
+      };
     }
 
     // 默认为表达式语句
@@ -325,6 +425,20 @@ function evaluate(node, env) {
       return lastResult;
     case "EmptyStatement":
       return;
+    case "BlockStatement": // 代码块
+      let result;
+      for (const stmt of node.body) {
+        result = evaluate(stmt, env);
+      }
+      return result;
+    case "IfStatement": // if
+      const testResult = evaluate(node.test, env);
+      if (testResult) {
+        return evaluate(node.consequent, env);
+      } else if (node.alternate) {
+        return evaluate(node.alternate, env);
+      }
+      return null;
     case "AssignmentExpression": // 赋值表达式
       let rightValue = evaluate(node.right, env);
       let leftName = node.left.name;
@@ -349,6 +463,11 @@ function evaluate(node, env) {
       }
     case "VariableDeclaration": // 变量声明
       env[node.id] = evaluate(node.init, env); // 计算初始值并存入环境
+      return;
+    case "VariableDeclarationList":
+      for (const decl of node.declarations) {
+        env[decl.id] = evaluate(decl.init, env);
+      }
       return;
     case "Literal": // 字面量
       return node.value; // 返回值本身
@@ -420,6 +539,8 @@ function evaluate(node, env) {
       throw "Unknown node " + node.type; // 报错
   }
 }
+
+// 运行代码
 function run(code) {
   return evaluate(parse(tokenize(code)), {}); // 词法 → 语法 → 执行，初始环境为空对象
 }
