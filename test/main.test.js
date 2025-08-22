@@ -19,7 +19,12 @@ describe("变量", () => {
   });
 
   test("空", () => {
+    expect(run(`let empty; empty`)).toEqual(null);
     expect(run(`let empty = null; empty`)).toEqual(null);
+    expect(run(`let y; let z = y; z`)).toEqual(null);
+    expect(run(`let a,b,c; a`)).toEqual(null);
+    expect(run(`let a,b,c = 1,2,3; a`)).toEqual(1);
+    expect(run(`let a,b,c = 1,2; c`)).toEqual(null);
   });
 
   test("赋值", () => {
@@ -75,6 +80,56 @@ describe("逻辑运算符", () => {
   test("逻辑运算", () => {
     expect(run(`true && false`)).toEqual(false);
     expect(run(`true || false`)).toEqual(true);
+  });
+});
+
+describe("条件", () => {
+  test("如果", () => {
+    // 基本 if 语句
+    expect(
+      run(`
+  let x = 1
+  let r
+  if (x == 1) { r = true }
+  r
+`)
+    ).toEqual(true);
+
+    // if-else 语句
+    expect(
+      run(`
+  let x = 2
+  let r
+  if (x == 1) { r = true } else { r = false }
+  r
+`)
+    ).toEqual(false);
+
+    // 嵌套 if 语句
+    expect(
+      run(`
+  let x = 1
+  let y = 2
+  let r
+  if (x == 1) {
+    if (y == 2) {
+      r = true
+    } else {
+      r = false
+    }
+  }
+  r
+`)
+    ).toEqual(true);
+
+    expect(
+      run(`
+  let x = 1
+  let r
+  if (x == 1) r = true
+  r
+`)
+    ).toEqual(true);
   });
 });
 
