@@ -1,15 +1,72 @@
+// 目标：用 JS 实现一个 JS（mini 版）
+
 // 词法分析
 function tokenize(code) {
   // 使用正则表达式匹配代码中的 token，如关键字、符号、标识符、数字等
   // 在词法分析阶段，通过正则表达式中的 \s* 来过滤空格和换行符
-  const regex =
-    /\s*(=>|{|}|\(|\)|;|,|\?|=|\+|\-|\*|\/|return|function|let|[A-Za-z_]\w*|\d+)\s*/g;
+  // 定义各种 token 的正则模式
+  const LITERALS = [
+    `"([^"\\\\]|\\\\.)*"`, // 双引号字符串
+    `'([^'\\\\]|\\\\.)*'`, // 单引号字符串
+    `\\d+\\.?\\d*`, // 负数和正数和小数
+    `true`, // 布尔值 true
+    `false`, // 布尔值 false
+  ];
+
+  const KEYWORDS = [`function`, `return`, `let`, `if`, `else`, `while`, `null`];
+
+  // 注意：长的操作符要放在短的操作符前面！
+  const OPERATORS = [
+    // 三元操作符
+    `=>`,
+    `\\?`,
+    `:`,
+
+    // 比较操作符（长的在前）
+    `===`,
+    `!==`,
+    `==`,
+    `!=`,
+    `<=`,
+    `>=`,
+
+    // 复合赋值操作符
+    `\\+=`,
+    `-=`,
+    `\\*=`,
+    `/=`,
+
+    // 其他操作符
+    `<`,
+    `>`,
+    `=`,
+    `\\{`,
+    `\\}`,
+    `\\(`,
+    `\\)`,
+    `;`,
+    `,`,
+    `&&`,
+    `\\|\\|`, // 逻辑操作符
+    `\\+`,
+    `-`,
+    `\\*`,
+    `\\/`,
+  ];
+
+  const IDENTIFIERS = [
+    `[A-Za-z_]\\w*`, // 标识符
+  ];
+
+  // 合并所有模式
+  const ALL_PATTERNS = [...LITERALS, ...KEYWORDS, ...OPERATORS, ...IDENTIFIERS];
+  const TOKEN_REGEX = new RegExp(`\\s*(${ALL_PATTERNS.join("|")})\\s*`, "g");
 
   // matchAll 匹配所有符合正则的内容，然后用 map 提取出匹配的 token（m[1] 是捕获组）
-  let tokens = [...code.matchAll(regex)].map((m) => m[1]);
-  tokens = tokens.filter(token => token !== ';'); // js 对分号可有可无
+  let tokens = [...code.matchAll(TOKEN_REGEX)].map((m) => m[1]);
+  tokens = tokens.filter((token) => token !== ";"); // js 对分号可有可无
   console.log(tokens);
-  return tokens
+  return tokens;
 }
 
 // 语法分析
@@ -22,10 +79,49 @@ function parse(tokens) {
   function parsePrimary() {
     const t = next(); // 取出当前 token
 
-    if (!t) throw new Error("Unexpected end of input");
+    // 处理负数
+    if (t === "-") {
+      const numberToken = next();
+      if (/^\d+\.?\d*$/.test(numberToken)) {
+        return { type: "Literal", value: -Number(numberToken), raw: t };
+      }
+      // 如果不是数字，回退并当作二元运算符处理
+      i -= 2; // 回退两个token
+      return parseMultiplicative(); // 重新解析
+    }
+
+    // 字符串字面量
+    if (
+      (t.startsWith('"') && t.endsWith('"')) ||
+      (t.startsWith("'") && t.endsWith("'"))
+    ) {
+      // 去掉引号并处理转义字符
+      let value = t.slice(1, -1);
+      // 简单的转义字符处理
+      value = value
+        .replace(/\\n/g, "\n")
+        .replace(/\\t/g, "\t")
+        .replace(/\\r/g, "\r")
+        .replace(/\\"/g, '"')
+        .replace(/\\'/g, "'")
+        .replace(/\\\\/g, "\\");
+      return { type: "Literal", value: value, raw: t };
+    }
+
+    if (t === "true") {
+      return { type: "Literal", value: true, raw: t };
+    }
+
+    if (t === "false") {
+      return { type: "Literal", value: false, raw: t };
+    }
+
+    if (t === "null") {
+      return { type: "Literal", value: null, raw: t };
+    }
 
     // 如果是数字
-    if (/^\d+$/.test(t)) return { type: "Literal", value: +t }; // 转为数字字面量
+    if (/^\d+\.?\d*$/.test(t)) return { type: "Literal", value: +t }; // 转为数字字面量
 
     // 如果是左括号
     if (t === "(") {
@@ -37,17 +133,38 @@ function parse(tokens) {
     // 如果是标识符
     if (/^[A-Za-z_]\w*$/.test(t)) {
       let node = { type: "Identifier", name: t }; // 构造标识符节点
-      // 如果标识符后面是左括号，说明是函数调用
-      if (peek() === "(") {
-        next(); // 吃掉 "("
-        let args = []; // 参数列表
-        while (peek() !== ")") {
-          args.push(parseExpression()); // 添加参数
-          if (peek() === ",") next(); // 如果有逗号，吃掉
-        }
-        next(); // 吃掉 ")"
-        node = { type: "CallExpression", callee: node, arguments: args }; // 构造调用节点
+      let p = peek();
+      switch (p) {
+        // 如果标识符后面是左括号，说明是函数调用
+        case "(":
+          next(); // 吃掉 "("
+          let args = []; // 参数列表
+          while (peek() !== ")") {
+            args.push(parseExpression()); // 添加参数
+            if (peek() === ",") next(); // 如果有逗号，吃掉
+          }
+          next(); // 吃掉 ")"
+          node = { type: "CallExpression", callee: node, arguments: args }; // 构造调用节点
+          break;
+        // 如果标识符后面是等号，说明是赋值
+        case "=":
+        case "+=":
+        case "-=":
+        case "*=":
+        case "/=":
+          next(); // 吃掉 "="/"+="...
+          let expression = parseExpression(); // 赋值的表达式
+          node = {
+            type: "AssignmentExpression",
+            operator: p,
+            left: { type: "Identifier", name: t },
+            right: expression,
+          };
+          break;
+        default:
+          break;
       }
+
       return node;
     }
 
@@ -77,8 +194,52 @@ function parse(tokens) {
     return left;
   }
 
+  // 解析逻辑与运算
+  function parseLogicalAnd() {
+    let left = parseEquality();
+    while (peek() === "&&") {
+      const op = next();
+      const right = parseEquality();
+      left = { type: "BinaryExpression", operator: op, left, right };
+    }
+    return left;
+  }
+
+  // 解析相等性比较
+  function parseEquality() {
+    let left = parseRelational();
+    while (["==", "===", "!=", "!=="].includes(peek())) {
+      const op = next();
+      const right = parseRelational();
+      left = { type: "BinaryExpression", operator: op, left, right };
+    }
+    return left;
+  }
+
+  // 解析关系比较
+  function parseRelational() {
+    let left = parseAdditive();
+    while (["<", ">", "<=", ">="].includes(peek())) {
+      const op = next();
+      const right = parseAdditive();
+      left = { type: "BinaryExpression", operator: op, left, right };
+    }
+    return left;
+  }
+
+  // 解析逻辑与运算
+  function parseLogicalOr() {
+    let left = parseLogicalAnd();
+    while (peek() === "||") {
+      const op = next();
+      const right = parseLogicalAnd();
+      left = { type: "BinaryExpression", operator: op, left, right };
+    }
+    return left;
+  }
+
   // 解析表达式入口
-  const parseExpression = parseAdditive;
+  const parseExpression = parseLogicalOr;
 
   // 解析语句（let、function、return、普通表达式等）
   function parseStatement() {
@@ -164,6 +325,28 @@ function evaluate(node, env) {
       return lastResult;
     case "EmptyStatement":
       return;
+    case "AssignmentExpression": // 赋值表达式
+      let rightValue = evaluate(node.right, env);
+      let leftName = node.left.name;
+      switch (node.operator) {
+        case "=":
+          env[leftName] = rightValue;
+          return rightValue;
+        case "+=":
+          env[leftName] = env[leftName] + rightValue;
+          return env[leftName];
+        case "-=":
+          env[leftName] = env[leftName] - rightValue;
+          return env[leftName];
+        case "*=":
+          env[leftName] = env[leftName] * rightValue;
+          return env[leftName];
+        case "/=":
+          env[leftName] = env[leftName] / rightValue;
+          return env[leftName];
+        default:
+          throw new Error(`Unsupported assignment operator: ${node.operator}`);
+      }
     case "VariableDeclaration": // 变量声明
       env[node.id] = evaluate(node.init, env); // 计算初始值并存入环境
       return;
@@ -172,17 +355,46 @@ function evaluate(node, env) {
     case "Identifier": // 标识符（变量名）
       return env[node.name]; // 从环境查找值
     case "BinaryExpression": // 二元表达式
-      let l = evaluate(node.left, env), // 左操作数
-        rr = evaluate(node.right, env); // 右操作数
-
+      let l = evaluate(node.left, env); // 左操作数
+      let r = evaluate(node.right, env); // 右操作数
       // 根据操作符执行计算
-      return node.operator == "+"
-        ? l + rr
-        : node.operator == "-"
-        ? l - rr
-        : node.operator == "*"
-        ? l * rr
-        : l / rr;
+      switch (node.operator) {
+        // 算术运算
+        case "+":
+          return l + r;
+        case "-":
+          return l - r;
+        case "*":
+          return l * r;
+        case "/":
+          return l / r;
+
+        // 比较运算
+        case "==":
+          return l == r;
+        case "===":
+          return l === r;
+        case "!=":
+          return l != r;
+        case "!==":
+          return l !== r;
+        case "<":
+          return l < r;
+        case ">":
+          return l > r;
+        case "<=":
+          return l <= r;
+        case ">=":
+          return l >= r;
+
+        // 逻辑运算
+        case "&&":
+          return l && r;
+        case "||":
+          return l || r;
+        default:
+          throw new Error(`Unknown operator: ${node.operator}`);
+      }
     case "ExpressionStatement":
       return evaluate(node.expression, env); // 表达式语句
     case "FunctionDeclaration": // 函数声明
@@ -212,4 +424,4 @@ function run(code) {
   return evaluate(parse(tokenize(code)), {}); // 词法 → 语法 → 执行，初始环境为空对象
 }
 
-export { run }
+export { run };
