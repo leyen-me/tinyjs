@@ -1,7 +1,65 @@
 // 目标：用 JS 实现一个 X 语言
 
+// 新增：移除注释的函数
+function removeComments(code) {
+  let result = '';
+  let i = 0;
+
+  while (i < code.length) {
+    // 检查是否是单行注释 //
+    if (code[i] === '/' && code[i + 1] === '/') {
+      // 跳过直到行尾
+      while (i < code.length && code[i] !== '\n') {
+        i++;
+      }
+      // 保留换行符（如果存在）
+      if (i < code.length && code[i] === '\n') {
+        result += '\n';
+        i++;
+      }
+      continue;
+    }
+
+    // 检查是否是多行注释 /*
+    if (code[i] === '/' && code[i + 1] === '*') {
+      i += 2; // 跳过 /*
+      // 跳过直到遇到 */
+      while (i < code.length - 1 && !(code[i] === '*' && code[i + 1] === '/')) {
+        i++;
+      }
+      i += 2; // 跳过 */
+      continue;
+    }
+
+    // 普通字符
+    result += code[i];
+    i++;
+  }
+
+  return result;
+}
+
+// 辅助函数
+function shouldReturnFromLoop(bodyNode, result) {
+  if (result === undefined) return false;
+  // 直接的 return 语句
+  if (bodyNode.type === 'ReturnStatement') {
+    return true;
+  }
+  // 块语句中的 return
+  if (bodyNode.type === 'BlockStatement') {
+    // 简单处理：如果结果不是基本类型，可能是 return
+    return typeof result === 'object' && result !== null && result.type === 'ReturnStatement';
+  }
+  // 普通表达式结果不应该导致函数返回
+  return false;
+}
+
 // 词法分析
 function tokenize(code) {
+  // 第一步：移除注释
+  let cleanCode = removeComments(code);
+
   // 使用正则表达式匹配代码中的 token，如关键字、符号、标识符、数字等
   // 在词法分析阶段，通过正则表达式中的 \s* 来过滤空格和换行符
   // 定义各种 token 的正则模式
@@ -13,7 +71,9 @@ function tokenize(code) {
     `false`, // 布尔值 false
   ];
 
-  const KEYWORDS = [`function`, `return`, `let`, `if`, `else`, `while`, `null`];
+  const KEYWORDS = [`function`, `return`, `let`, `const`, `if`,
+    `else`, `while`, `break`, `continue`, `switch`,
+    `case`, `default`, `null`, `try`, `catch`, `finally`, `throw`];
 
   // 注意：长的操作符要放在短的操作符前面！
   const OPERATORS = [
@@ -52,6 +112,7 @@ function tokenize(code) {
     `-`,
     `\\*`,
     `\\/`,
+    `%`
   ];
 
   const IDENTIFIERS = [
@@ -63,8 +124,10 @@ function tokenize(code) {
   const TOKEN_REGEX = new RegExp(`\\s*(${ALL_PATTERNS.join("|")})\\s*`, "g");
 
   // matchAll 匹配所有符合正则的内容，然后用 map 提取出匹配的 token（m[1] 是捕获组）
-  let tokens = [...code.matchAll(TOKEN_REGEX)].map((m) => m[1]);
+  let tokens = [...cleanCode.matchAll(TOKEN_REGEX)].map((m) => m[1]);
   tokens = tokens.filter((token) => token !== ";"); // js 对分号可有可无
+  // console.log(tokens);
+
   return tokens;
 }
 
@@ -174,7 +237,7 @@ function parse(tokens) {
   // 解析乘除法（高优先级）
   function parseMultiplicative() {
     let left = parsePrimary();
-    while (peek() === "*" || peek() === "/") {
+    while (peek() === "*" || peek() === "/" || peek() === "%") {
       const op = next();
       const right = parsePrimary();
       left = { type: "BinaryExpression", operator: op, left, right };
@@ -250,8 +313,8 @@ function parse(tokens) {
       return { type: "EmptyStatement" };
     }
     // 变量声明
-    if (t === "let") {
-      next(); // 吃掉 "let"
+    if (t === "let" || t === "const") {
+      const kind = next(); // 吃掉 "let" 或者 "const"
 
       const declarations = [];
       const names = [];
@@ -310,6 +373,7 @@ function parse(tokens) {
 
       return {
         type: "VariableDeclarationList",
+        kind,
         declarations,
       };
     }
@@ -346,7 +410,6 @@ function parse(tokens) {
       next(); // 吃掉 "if"
       next(); // 吃掉 "("
       const test = parseExpression(); // 解析条件表达式
-      console.log(test);
       next(); // 吃掉 ")"
 
       // 解析 consequent（if 后面的语句块）
@@ -389,7 +452,155 @@ function parse(tokens) {
         alternate,
       };
     }
+    // while 循环
+    if (t === "while") {
+      next(); // 吃掉 "while"
+      next(); // 吃掉 "("
+      const test = parseExpression(); // 解析条件表达式
+      next(); // 吃掉 ")"
 
+      // 解析循环体
+      let body;
+      if (peek() === "{") {
+        next(); // 吃掉 "{"
+        const bodyStatements = [];
+        while (peek() !== "}") {
+          bodyStatements.push(parseStatement());
+        }
+        next(); // 吃掉 "}"
+        body = { type: "BlockStatement", body: bodyStatements };
+      } else {
+        body = parseStatement();
+      }
+
+      return {
+        type: "WhileStatement",
+        test,
+        body
+      };
+    }
+    // break 
+    if (t === "break") {
+      next();
+      return { type: "BreakStatement" };
+    }
+    // continue
+    if (t === "continue") {
+      next();
+      return { type: "ContinueStatement" };
+    }
+    // switch case default
+    if (t === "switch") {
+      next(); // 吃掉 "switch"
+      next(); // 吃掉 "("
+      const discriminant = parseExpression(); // switch 表达式
+      next(); // 吃掉 ")"
+      next(); // 吃掉 "{"
+
+      const cases = [];
+      let defaultCase = null;
+
+      while (peek() !== "}") {
+        const caseToken = peek();
+
+        if (caseToken === "case") {
+          next(); // 吃掉 "case"
+          const test = parseExpression(); // case 的值
+          next(); // 吃掉 ":"
+
+          const consequent = [];
+          while (peek() !== "}" && peek() !== "case" && peek() !== "default") {
+            consequent.push(parseStatement());
+          }
+
+          cases.push({ type: "SwitchCase", test, consequent });
+        } else if (caseToken === "default") {
+          next(); // 吃掉 "default"
+          next(); // 吃掉 ":"
+
+          const consequent = [];
+          while (peek() !== "}" && peek() !== "case") {
+            consequent.push(parseStatement());
+          }
+
+          defaultCase = { type: "SwitchCase", test: null, consequent };
+        } else {
+          throw new Error(`Unexpected token in switch: ${caseToken}`);
+        }
+      }
+
+      next(); // 吃掉 "}"
+
+      return {
+        type: "SwitchStatement",
+        discriminant,
+        cases,
+        default: defaultCase
+      };
+    }
+    // try catch finally
+    if (t === "try") {
+      next(); // 吃掉 "try"
+
+      // 解析 try 块
+      next(); // 吃掉 "{"
+      const tryBody = [];
+      while (peek() !== "}") {
+        tryBody.push(parseStatement());
+      }
+      next(); // 吃掉 "}"
+
+      let catchClause = null;
+      let finallyBlock = null;
+
+      // 检查是否有 catch
+      if (peek() === "catch") {
+        next(); // 吃掉 "catch"
+        next(); // 吃掉 "("
+        const param = next(); // catch 参数名
+        next(); // 吃掉 ")"
+
+        next(); // 吃掉 "{"
+        const catchBody = [];
+        while (peek() !== "}") {
+          catchBody.push(parseStatement());
+        }
+        next(); // 吃掉 "}"
+
+        catchClause = {
+          type: "CatchClause",
+          param: { type: "Identifier", name: param },
+          body: { type: "BlockStatement", body: catchBody }
+        };
+      }
+
+      // 检查是否有 finally
+      if (peek() === "finally") {
+        next(); // 吃掉 "finally"
+
+        next(); // 吃掉 "{"
+        const finallyBody = [];
+        while (peek() !== "}") {
+          finallyBody.push(parseStatement());
+        }
+        next(); // 吃掉 "}"
+
+        finallyBlock = { type: "BlockStatement", body: finallyBody };
+      }
+
+      return {
+        type: "TryStatement",
+        block: { type: "BlockStatement", body: tryBody },
+        handler: catchClause,
+        finalizer: finallyBlock
+      };
+    }
+    // throw
+    if (t === "throw") {
+      next(); // 吃掉 "throw"
+      const argument = parseExpression(); // 解析要抛出的表达式
+      return { type: "ThrowStatement", argument };
+    }
     // 默认为表达式语句
     let expr = parseExpression(); // 解析表达式
     return { type: "ExpressionStatement", expression: expr }; // 返回表达式语句节点
@@ -429,6 +640,14 @@ function evaluate(node, env) {
       let result;
       for (const stmt of node.body) {
         result = evaluate(stmt, env);
+
+        // 传播 break/continue/return
+        if (result !== undefined &&
+          typeof result === 'object' &&
+          result !== null &&
+          (result.__break || result.__continue || result.type === 'ReturnStatement')) {
+          return result;
+        }
       }
       return result;
     case "IfStatement": // if
@@ -439,9 +658,106 @@ function evaluate(node, env) {
         return evaluate(node.alternate, env);
       }
       return null;
+    case "WhileStatement":
+      while (evaluate(node.test, env)) {
+        const result = evaluate(node.body, env);
+        // 处理 break
+        if (result && typeof result === 'object' && result.__break) {
+          break;
+        }
+        // 处理 continue
+        if (result && typeof result === 'object' && result.__continue) {
+          continue;
+        }
+        // 如果返回了非 undefined 值，说明遇到了 return 语句
+        if (shouldReturnFromLoop(node.body, result)) {
+          return result;
+        }
+      }
+      return null;
+
+    case "SwitchStatement":
+      const discriminantValue = evaluate(node.discriminant, env);
+      const cases = node.cases;
+      const defaultCase = node.default;
+
+      let matched = false;
+      let fallthrough = false;
+
+      for (const caseNode of cases) {
+        const testValue = evaluate(caseNode.test, env);
+        if (testValue === discriminantValue || fallthrough) {
+          matched = true;
+          for (const stmt of caseNode.consequent) {
+            const result = evaluate(stmt, env);
+            if (result && typeof result === 'object' && result.__break) {
+              return; // break 跳出 switch
+            }
+            if (shouldReturnFromLoop(stmt, result)) {
+              return result;
+            }
+          }
+          // 如果没有 break，继续执行下一个 case（fall-through）
+          fallthrough = true;
+        }
+      }
+
+      if (!matched && defaultCase) {
+        for (const stmt of defaultCase.consequent) {
+          const result = evaluate(stmt, env);
+          if (result && typeof result === 'object' && result.__break) {
+            return;
+          }
+          if (shouldReturnFromLoop(stmt, result)) {
+            return result;
+          }
+        }
+      }
+      return;
+    case "TryStatement":
+      try {
+        // 执行 try 块
+        let result = evaluate(node.block, env);
+        if (shouldReturnFromLoop(node.block, result)) {
+          return result;
+        }
+      } catch (error) {
+        // 如果有 catch 子句
+        if (node.handler) {
+          env[node.handler.param.name] = error.message || error;
+          let result = evaluate(node.handler.body, env);
+          if (shouldReturnFromLoop(node.handler.body, result)) {
+            return result;
+          }
+        } else {
+          // 没有 catch，重新抛出错误
+          throw error;
+        }
+      } finally {
+        // 如果有 finally 子句，总是执行
+        if (node.finalizer) {
+          let result = evaluate(node.finalizer, env);
+          if (shouldReturnFromLoop(node.finalizer, result)) {
+            return result;
+          }
+        }
+      }
+      return;
+    case "ThrowStatement":
+      const errorValue = evaluate(node.argument, env);
+      throw new Error(errorValue);
+    case "BreakStatement":
+      return { __break: true };
+    case "ContinueStatement":
+      return { __continue: true };
     case "AssignmentExpression": // 赋值表达式
-      let rightValue = evaluate(node.right, env);
       let leftName = node.left.name;
+
+      // 不能给常量赋值
+      if (env._const && env._const.has(leftName)) {
+        throw new Error(`TypeError: Assignment to constant variable '${leftName}'`);
+      }
+      let rightValue = evaluate(node.right, env);
       switch (node.operator) {
         case "=":
           env[leftName] = rightValue;
@@ -465,8 +781,15 @@ function evaluate(node, env) {
       env[node.id] = evaluate(node.init, env); // 计算初始值并存入环境
       return;
     case "VariableDeclarationList":
+      if (!env._const) env._const = new Set(); // 初始化常量集合
+      // 变量就直接放env
       for (const decl of node.declarations) {
-        env[decl.id] = evaluate(decl.init, env);
+        const value = evaluate(decl.init, env);
+        env[decl.id] = value;
+        if (node.kind === "const") {
+          // 常量放env._const
+          env._const.add(decl.id);
+        }
       }
       return;
     case "Literal": // 字面量
@@ -487,6 +810,8 @@ function evaluate(node, env) {
           return l * r;
         case "/":
           return l / r;
+        case "%":  // 添加取模运算
+          return l % r;
 
         // 比较运算
         case "==":

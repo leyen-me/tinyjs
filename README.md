@@ -13,3 +13,19 @@ pnpm i
 ```
 pnpm test
 ```
+
+### 将要实现的功能
+
+```
+- const 常量
+- 内部函数
+- 注释
+- while 循环/迭代，do while
+- try/error
+- switch/case
+- 函数声明
+- 函数调用
+- 匿名函数
+- 对象、数组
+- 作用域和闭包
+```
