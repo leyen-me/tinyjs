@@ -1,6 +1,15 @@
-// 目标：用 JS 实现一个 JS（MINI） 语言
+/**
+ * JS-MINI 语言解释器
+ * 一个简化版的 JavaScript 解释器实现
+ */
 
-// 移除注释
+// ==================== 工具函数 ====================
+
+/**
+ * 移除代码中的注释
+ * @param {string} code - 源代码
+ * @returns {string} 移除注释后的代码
+ */
 function removeComments(code) {
   let result = "";
   let i = 0;
@@ -39,7 +48,12 @@ function removeComments(code) {
   return result;
 }
 
-// 辅助函数
+/**
+ * 判断是否应该从循环中返回
+ * @param {Object} bodyNode - AST 节点
+ * @param {*} result - 执行结果
+ * @returns {boolean} 是否应该返回
+ */
 function shouldReturnFromLoop(bodyNode, result) {
   if (result === undefined) return false;
   // 直接的 return 语句
@@ -59,13 +73,17 @@ function shouldReturnFromLoop(bodyNode, result) {
   return false;
 }
 
-// 词法分析
+// ==================== 词法分析器 ====================
+
+/**
+ * 词法分析器 - 将源代码转换为 token 序列
+ * @param {string} code - 源代码
+ * @returns {Array<string>} token 数组
+ */
 function tokenize(code) {
   // 第一步：移除注释
-  let cleanCode = removeComments(code);
+  const cleanCode = removeComments(code);
 
-  // 使用正则表达式匹配代码中的 token，如关键字、符号、标识符、数字等
-  // 在词法分析阶段，通过正则表达式中的 \s* 来过滤空格和换行符
   // 定义各种 token 的正则模式
   const LITERALS = [
     `"([^"\\\\]|\\\\.)*"`, // 双引号字符串
@@ -85,7 +103,6 @@ function tokenize(code) {
     `do`,
     `while`,
     `for`,
-
     `break`,
     `continue`,
     `switch`,
@@ -96,7 +113,6 @@ function tokenize(code) {
     `catch`,
     `finally`,
     `throw`,
-
     `in`,
     `of`,
   ];
@@ -107,11 +123,9 @@ function tokenize(code) {
     `=>`,
     `\\?`,
     `:`,
-
     // 递增递减操作符（放在前面，避免被解析为两个 + 或 -）
     `\\+\\+`,
     `--`,
-
     // 比较操作符（长的在前）
     `===`,
     `!==`,
@@ -119,13 +133,11 @@ function tokenize(code) {
     `!=`,
     `<=`,
     `>=`,
-
     // 复合赋值操作符
     `\\+=`,
     `-=`,
     `\\*=`,
     `/=`,
-
     // 其他操作符
     `<`,
     `>`,
@@ -145,7 +157,6 @@ function tokenize(code) {
     `\\*`,
     `\\/`,
     `%`,
-
     `\\.`,
   ];
 
@@ -169,12 +180,16 @@ function tokenize(code) {
   const TOKEN_REGEX = new RegExp(`\\s*(${escapedPatterns.join("|")})\\s*`, "g");
 
   // matchAll 匹配所有符合正则的内容，然后用 map 提取出匹配的 token（m[1] 是捕获组）
-  let tokens = [...cleanCode.matchAll(TOKEN_REGEX)].map((m) => m[1]);
-  // console.log(tokens);
-  return tokens;
+  return [...cleanCode.matchAll(TOKEN_REGEX)].map((m) => m[1]);
 }
 
-// 语法分析
+// ==================== 语法分析器 ====================
+
+/**
+ * 语法分析器 - 将 token 序列转换为 AST
+ * @param {Array<string>} tokens - token 数组
+ * @returns {Object} AST 抽象语法树
+ */
 function parse(tokens) {
   let i = 0; // 当前解析的位置索引
   const peek = () => tokens[i]; // peek：查看当前 token，但不移动索引
@@ -940,7 +955,14 @@ function parse(tokens) {
   return parseProgram();
 }
 
-// 执行 AST
+// ==================== 解释器 ====================
+
+/**
+ * 解释器 - 执行 AST
+ * @param {Object} node - AST 节点
+ * @param {Object} env - 执行环境
+ * @returns {*} 执行结果
+ */
 function evaluate(node, env) {
   switch (node.type) {
     case "Program": // 程序根节点
@@ -1408,7 +1430,13 @@ function evaluate(node, env) {
   }
 }
 
-// 运行代码
+// ==================== 主函数 ====================
+
+/**
+ * 运行 JS-MINI 代码
+ * @param {string} code - JS-MINI 源代码
+ * @returns {*} 执行结果
+ */
 function run(code) {
   // 初始化环境
   // 把 js 的一些特性移植进去
