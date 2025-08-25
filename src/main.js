@@ -1233,21 +1233,20 @@ function evaluate(node, env) {
       }
     case "UpdateExpression":
       const { operator, argument, prefix } = node;
-
       if (argument.type === "Identifier") {
         const varName = argument.name;
-
+        const targetEnv = !env.hasOwnProperty(varName) ? env.__proto__ : env;
         if (operator === "++") {
           if (prefix) {
-            return ++env[varName];
+            return ++targetEnv[varName];
           } else {
-            return env[varName]++;
+            return targetEnv[varName]++;
           }
         } else if (operator === "--") {
           if (prefix) {
-            return --env[varName];
+            return --targetEnv[varName];
           } else {
-            return env[varName]--;
+            return targetEnv[varName]--;
           }
         }
       } else if (argument.type === "MemberExpression") {
@@ -1278,25 +1277,25 @@ function evaluate(node, env) {
       let rightValue = evaluate(node.right, env);
 
       if (left.type === "Identifier") {
-        // 普通变量赋值
-        if (env._const && env._const.has(left.name)) {
+        const varName = left.name;
+        const targetEnv = !env.hasOwnProperty(varName) ? env.__proto__ : env;
+        // const 不允许修改
+        if (targetEnv._const && targetEnv._const.has(varName)) {
           throw new Error(
-            `TypeError: Assignment to constant variable '${left.name}'`
+            `TypeError: Assignment to constant variable '${varName}'`
           );
         }
         switch (node.operator) {
           case "=":
-            return (env[left.name] = rightValue);
+            return (targetEnv[left.name] = rightValue);
           case "+=":
-            console.log(env, left.name, env[left.name], rightValue);
-
-            return (env[left.name] += rightValue);
+            return (targetEnv[left.name] += rightValue);
           case "-=":
-            return (env[left.name] -= rightValue);
+            return (targetEnv[left.name] -= rightValue);
           case "*=":
-            return (env[left.name] *= rightValue);
+            return (targetEnv[left.name] *= rightValue);
           case "/=":
-            return (env[left.name] /= rightValue);
+            return (targetEnv[left.name] /= rightValue);
           default:
             throw new Error(
               `Unsupported assignment operator: ${node.operator}`
@@ -1343,7 +1342,9 @@ function evaluate(node, env) {
     case "Literal": // 字面量
       return node.value; // 返回值本身
     case "Identifier": // 标识符（变量名）
-      return env[node.name]; // 从环境查找值
+      const varName = node.name;
+      const targetEnv = !env.hasOwnProperty(varName) ? env.__proto__ : env;
+      return targetEnv[node.name]; // 从环境查找值
     case "BinaryExpression": // 二元表达式
       let l = evaluate(node.left, env); // 左操作数
       let r = evaluate(node.right, env); // 右操作数

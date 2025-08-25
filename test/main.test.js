@@ -954,16 +954,16 @@ describe("for in", () => {
     expect(
       run(`
       let obj = { a: 1, b: 2, c: 3 };
-      let sum = 0;
+      let sum1 = 0;
       for (let key in obj) {
-        sum += obj[key];
+        sum1 += obj[key];
       }
-      sum
+      sum1
     `)
     ).toBe(6);
   });
 
-  test("for in and for of loops with break and continue", () => {
+  test("for in and for of loops with break and continue2", () => {
     expect(
       run(`
       let obj = { a: 1, b: 2, c: 3 };
