@@ -959,7 +959,6 @@ function evaluate(node, env) {
       let result;
       for (const stmt of node.body) {
         result = evaluate(stmt, env);
-
         // 传播 break/continue/return
         if (
           result !== undefined &&
@@ -980,7 +979,7 @@ function evaluate(node, env) {
       } else if (node.alternate) {
         return evaluate(node.alternate, env);
       }
-      return null;
+      return;
     case "WhileStatement":
       while (evaluate(node.test, env)) {
         const result = evaluate(node.body, env);
@@ -997,7 +996,7 @@ function evaluate(node, env) {
           return result;
         }
       }
-      return null;
+      return;
     case "DoWhileStatement":
       do {
         // 执行循环体
@@ -1055,15 +1054,14 @@ function evaluate(node, env) {
         const object = evaluate(rightIn, env);
         if (object && typeof object === "object" && object !== null) {
           for (const key in object) {
-            const blockEnv = Object.create(env);
             // 设置循环变量
             if (leftIn.type === "VariableDeclaration") {
-              blockEnv[leftIn.id] = key;
+              env[leftIn.id] = key;
             } else if (leftIn.type === "Identifier") {
-              blockEnv[leftIn.name] = key;
+              env[leftIn.name] = key;
             }
             // 执行循环体
-            const result = evaluate(bodyIn, blockEnv);
+            const result = evaluate(bodyIn, env);
             // 处理 break
             if (result && typeof result === "object" && result.__break) {
               break;
@@ -1090,16 +1088,14 @@ function evaluate(node, env) {
             typeof iterable[Symbol.iterator] === "function")
         ) {
           for (const value of iterable) {
-            // 创建新的作用域
-            const blockEnv = Object.create(env);
             // 设置循环变量
             if (leftOf.type === "VariableDeclaration") {
-              blockEnv[leftOf.id] = value;
+              env[leftOf.id] = value;
             } else if (leftOf.type === "Identifier") {
-              blockEnv[leftOf.name] = value;
+              env[leftOf.name] = value;
             }
             // 执行循环体
-            const result = evaluate(bodyOf, blockEnv);
+            const result = evaluate(bodyOf, env);
             // 处理 break
             if (result && typeof result === "object" && result.__break) {
               break;
@@ -1223,12 +1219,10 @@ function evaluate(node, env) {
       } else {
         // a.identifier 形式
         const property = node.property.name;
-
         if (Array.isArray(object) && typeof object[property] === "function") {
           // 返回绑定到对象的函数
           return object[property].bind(object);
         }
-
         return object[property];
       }
     case "UpdateExpression":
@@ -1287,15 +1281,15 @@ function evaluate(node, env) {
         }
         switch (node.operator) {
           case "=":
-            return (targetEnv[left.name] = rightValue);
+            return (targetEnv[varName] = rightValue);
           case "+=":
-            return (targetEnv[left.name] += rightValue);
+            return (targetEnv[varName] += rightValue);
           case "-=":
-            return (targetEnv[left.name] -= rightValue);
+            return (targetEnv[varName] -= rightValue);
           case "*=":
-            return (targetEnv[left.name] *= rightValue);
+            return (targetEnv[varName] *= rightValue);
           case "/=":
-            return (targetEnv[left.name] /= rightValue);
+            return (targetEnv[varName] /= rightValue);
           default:
             throw new Error(
               `Unsupported assignment operator: ${node.operator}`
